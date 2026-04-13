@@ -1,51 +1,68 @@
-import os
-import sys
+import customtkinter as ctk
+from tkinter import filedialog
+from pathlib import Path
 from pydub import AudioSegment
-from datetime import datetime
+import threading
 
-def convert_to_ogg(file_path):
-    """各種音声フォーマットをOGG(Vorbis)に変換する"""
-    supported_extensions = ('.mp3', '.webm', '.m4a', '.wav', '.flac')
-    
-    if not file_path.lower().endswith(supported_extensions):
-        return f"[SKIP] 対応外の形式です: {os.path.basename(file_path)}"
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
 
-    try:
-        # ファイルの読み込み
-        ext = os.path.splitext(file_path)[1].replace('.', '')
-        audio = AudioSegment.from_file(file_path, format=ext)
+        self.title("Universal OGG Tuna GUI")
+        self.geometry("500x350")
+        ctk.set_appearance_mode("dark")
 
-        # 出力ファイルパスの作成 (元の場所/output/ファイル名.ogg)
-        output_dir = os.path.join(os.path.dirname(file_path), "converted_ogg")
-        os.makedirs(output_dir, exist_ok=True)
+        # UI要素
+        self.label = ctk.CTkLabel(self, text="音声ファイルをOGGに一括変換", font=("Hiragino Sans", 20, "bold"))
+        self.label.pack(pady=20)
+
+        self.file_list_label = ctk.CTkLabel(self, text="ファイルを選択してください", text_color="gray")
+        self.file_list_label.pack(pady=5)
+
+        self.select_btn = ctk.CTkButton(self, text="ファイルを選択", command=self.select_files)
+        self.select_btn.pack(pady=10)
+
+        self.convert_btn = ctk.CTkButton(self, text="変換開始", command=self.start_conversion, state="disabled", fg_color="green")
+        self.convert_btn.pack(pady=10)
+
+        self.progress = ctk.CTkProgressBar(self)
+        self.progress.set(0)
+        self.progress.pack(pady=20, padx=20, fill="x")
+
+        self.files = []
+
+    def select_files(self):
+        self.files = filedialog.askopenfilenames(
+            filetypes=[("Audio Files", "*.mp3 *.webm *.m4a *.wav *.flac")]
+        )
+        if self.files:
+            self.file_list_label.configure(text=f"{len(self.files)} 個のファイルを選択中", text_color="white")
+            self.convert_btn.configure(state="normal")
+
+    def start_conversion(self):
+        self.convert_btn.configure(state="disabled")
+        self.select_btn.configure(state="disabled")
+        # メインスレッドを止めないよう別スレッドで実行
+        threading.Thread(target=self.convert_process).start()
+
+    def convert_process(self):
+        total = len(self.files)
+        for i, file_path in enumerate(self.files):
+            try:
+                p = Path(file_path)
+                audio = AudioSegment.from_file(str(p))
+                out_dir = p.parent / "converted_ogg"
+                out_dir.mkdir(exist_ok=True)
+                audio.export(str(out_dir / f"{p.stem}.ogg"), format="ogg", codec="libvorbis")
+            except Exception as e:
+                print(f"Error: {e}")
+            
+            self.progress.set((i + 1) / total)
         
-        base_name = os.path.splitext(os.path.basename(file_path))[0]
-        output_path = os.path.join(output_dir, f"{base_name}.ogg")
-
-        # OGGとして書き出し（ビットレートは標準的な192k）
-        audio.export(output_path, format="ogg", codec="libvorbis", bitrate="192k")
-
-        return f"[SUCCESS] 変換完了: {output_path}"
-
-    except Exception as e:
-        return f"[ERROR] 失敗 ({os.path.basename(file_path)}): {str(e)}"
+        self.label.configure(text="変換完了！", text_color="cyan")
+        self.convert_btn.configure(state="normal")
+        self.select_btn.configure(state="normal")
 
 if __name__ == "__main__":
-    print("="*50)
-    print(" Audio to OGG Converter (pydub edition)")
-    print("="*50)
-
-    targets = sys.argv[1:]
-
-    if not targets:
-        print("\n[!] 使い方: 音声ファイルをこのEXEにドラッグ＆ドロップしてください。")
-    else:
-        print(f"\n{len(targets)} 個のファイルを処理中...\n")
-        for t in targets:
-            result = convert_to_ogg(t)
-            print(result)
-
-    print("\n" + "="*50)
-    print(f"完了時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("何かキーを押すと終了します...")
-    input()
+    app = App()
+    app.mainloop()
