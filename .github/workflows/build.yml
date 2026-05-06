@@ -1,6 +1,7 @@
 name: Multi-OS GUI Build
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -11,30 +12,40 @@ jobs:
         include:
           - os: windows-latest
             out_name: OGG_Tuna_Win.exe
+            sep: ";"
           - os: macos-latest
             out_name: OGG_Tuna_Mac
+            sep: ":"
           - os: ubuntu-latest
             out_name: OGG_Tuna_Linux
+            sep: ":"
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+          cache: 'pip'
+
       - name: Install dependencies
         run: |
           pip install pyinstaller pydub customtkinter
-          # Linuxビルドに必要なライブラリ
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            sudo apt-get update
             sudo apt-get install -y python3-tk
           fi
         shell: bash
 
       - name: Build Binary
         run: |
-          # --noconsole: GUIのみ表示
-          pyinstaller --onefile --noconsole --name "${{ matrix.out_name }}" main.py
+          # customtkinterのインストール先を特定
+          CPATH=$(python -c "import customtkinter; import os; print(os.path.dirname(customtkinter.__file__))")
+          
+          # --add-data を使ってライブラリ内のテーマファイルを同梱
+          pyinstaller --onefile --noconsole \
+            --add-data "${CPATH}${{ matrix.sep }}customtkinter/" \
+            --name "${{ matrix.out_name }}" main.py
         shell: bash
 
       - name: Upload Artifact
@@ -42,4 +53,4 @@ jobs:
         with:
           name: GUI_Binary_${{ matrix.os }}
           path: dist/${{ matrix.out_name }}
-          retention-days: 1
+          retention-days: 5
